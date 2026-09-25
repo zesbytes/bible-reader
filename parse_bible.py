@@ -1,0 +1,129 @@
+import os
+import re
+import json
+import pandas as pd
+
+# Metadata configuration for all 66 books
+BOOKS_METADATA = [
+    {"id": "GEN", "name": "Genesis", "abbreviations": ["Gen", "Ge", "Gn"], "firstChapter": 1, "lastChapter": 50},
+    {"id": "EXO", "name": "Exodus", "abbreviations": ["Exo", "Ex", "Exod"], "firstChapter": 1, "lastChapter": 40},
+    {"id": "LEV", "name": "Leviticus", "abbreviations": ["Lev", "Le", "Lv"], "firstChapter": 1, "lastChapter": 27},
+    {"id": "NUM", "name": "Numbers", "abbreviations": ["Num", "Nu", "Nm", "Nb"], "firstChapter": 1, "lastChapter": 36},
+    {"id": "DEU", "name": "Deuteronomy", "abbreviations": ["Deut", "Deu", "Dt"], "firstChapter": 1, "lastChapter": 34},
+    {"id": "JOS", "name": "Joshua", "abbreviations": ["Josh", "Jos", "Jsh"], "firstChapter": 1, "lastChapter": 24},
+    {"id": "JDG", "name": "Judges", "abbreviations": ["Judg", "Jdg", "Jg", "Jdgs"], "firstChapter": 1, "lastChapter": 21},
+    {"id": "RUT", "name": "Ruth", "abbreviations": ["Rth", "Ru"], "firstChapter": 1, "lastChapter": 4},
+    {"id": "1SA", "name": "1 Samuel", "abbreviations": ["1Sam", "1Sa", "1S", "I Sam", "1 Sam"], "firstChapter": 1, "lastChapter": 31},
+    {"id": "2SA", "name": "2 Samuel", "abbreviations": ["2Sam", "2Sa", "2S", "II Sam", "2 Sam"], "firstChapter": 1, "lastChapter": 24},
+    {"id": "1KI", "name": "1 Kings", "abbreviations": ["1Kgs", "1Ki", "1K", "I Kgs", "1 Kings"], "firstChapter": 1, "lastChapter": 22},
+    {"id": "2KI", "name": "2 Kings", "abbreviations": ["2Kgs", "2Ki", "2K", "II Kgs", "2 Kings"], "firstChapter": 1, "lastChapter": 25},
+    {"id": "1CH", "name": "1 Chronicles", "abbreviations": ["1Chr", "1Ch", "1 Chron", "I Chr"], "firstChapter": 1, "lastChapter": 29},
+    {"id": "2CH", "name": "2 Chronicles", "abbreviations": ["2Chr", "2Ch", "2 Chron", "II Chr"], "firstChapter": 1, "lastChapter": 36},
+    {"id": "EZR", "name": "Ezra", "abbreviations": ["Ezr", "Ez"], "firstChapter": 1, "lastChapter": 10},
+    {"id": "NEH", "name": "Nehemiah", "abbreviations": ["Neh", "Ne"], "firstChapter": 1, "lastChapter": 13},
+    {"id": "EST", "name": "Esther", "abbreviations": ["Esth", "Est", "Es"], "firstChapter": 1, "lastChapter": 10},
+    {"id": "JOB", "name": "Job", "abbreviations": ["Job", "Jb"], "firstChapter": 1, "lastChapter": 42},
+    {"id": "PSA", "name": "Psalms", "abbreviations": ["Psa", "Ps", "Psalm", "Pslm"], "firstChapter": 1, "lastChapter": 150},
+    {"id": "PRO", "name": "Proverbs", "abbreviations": ["Prov", "Pro", "Pr", "Prv"], "firstChapter": 1, "lastChapter": 31},
+    {"id": "ECC", "name": "Ecclesiastes", "abbreviations": ["Eccl", "Ecc", "Ec", "Qoh"], "firstChapter": 1, "lastChapter": 12},
+    {"id": "SNG", "name": "Song of Solomon", "abbreviations": ["Song", "SOS", "Canticles", "Cant"], "firstChapter": 1, "lastChapter": 8},
+    {"id": "ISA", "name": "Isaiah", "abbreviations": ["Isa", "Is"], "firstChapter": 1, "lastChapter": 66},
+    {"id": "JER", "name": "Jeremiah", "abbreviations": ["Jer", "Jr"], "firstChapter": 1, "lastChapter": 52},
+    {"id": "LAM", "name": "Lamentations", "abbreviations": ["Lam", "La"], "firstChapter": 1, "lastChapter": 5},
+    {"id": "EZK", "name": "Ezekiel", "abbreviations": ["Ezek", "Ezk", "Eze"], "firstChapter": 1, "lastChapter": 48},
+    {"id": "DAN", "name": "Daniel", "abbreviations": ["Dan", "Da", "Dn"], "firstChapter": 1, "lastChapter": 12},
+    {"id": "HOS", "name": "Hosea", "abbreviations": ["Hos", "Ho"], "firstChapter": 1, "lastChapter": 14},
+    {"id": "JOL", "name": "Joel", "abbreviations": ["Joel", "Joe", "Jl"], "firstChapter": 1, "lastChapter": 3},
+    {"id": "AMO", "name": "Amos", "abbreviations": ["Amos", "Am"], "firstChapter": 1, "lastChapter": 9},
+    {"id": "OBA", "name": "Obadiah", "abbreviations": ["Obad", "Oba", "Ob"], "firstChapter": 1, "lastChapter": 1},
+    {"id": "JON", "name": "Jonah", "abbreviations": ["Jonah", "Jon", "Jnh"], "firstChapter": 1, "lastChapter": 4},
+    {"id": "MIC", "name": "Micah", "abbreviations": ["Mic", "Mc"], "firstChapter": 1, "lastChapter": 7},
+    {"id": "NAM", "name": "Nahum", "abbreviations": ["Nah", "Na"], "firstChapter": 1, "lastChapter": 3},
+    {"id": "HAB", "name": "Habakkuk", "abbreviations": ["Hab", "Hb"], "firstChapter": 1, "lastChapter": 3},
+    {"id": "ZEP", "name": "Zephaniah", "abbreviations": ["Zeph", "Zep", "Zp"], "firstChapter": 1, "lastChapter": 3},
+    {"id": "HAG", "name": "Haggai", "abbreviations": ["Hag", "Hg"], "firstChapter": 1, "lastChapter": 2},
+    {"id": "ZEC", "name": "Zechariah", "abbreviations": ["Zech", "Zec", "Zc"], "firstChapter": 1, "lastChapter": 14},
+    {"id": "MAL", "name": "Malachi", "abbreviations": ["Mal", "Ml"], "firstChapter": 1, "lastChapter": 4},
+    {"id": "MAT", "name": "Matthew", "abbreviations": ["Matt", "Mat", "Mt"], "firstChapter": 1, "lastChapter": 28},
+    {"id": "MRK", "name": "Mark", "abbreviations": ["Mark", "Mrk", "Mk"], "firstChapter": 1, "lastChapter": 16},
+    {"id": "LUK", "name": "Luke", "abbreviations": ["Luke", "Luk", "Lk"], "firstChapter": 1, "lastChapter": 24},
+    {"id": "JHN", "name": "John", "abbreviations": ["John", "Jhn", "Jn"], "firstChapter": 1, "lastChapter": 21},
+    {"id": "ACT", "name": "Acts", "abbreviations": ["Acts", "Act", "Ac"], "firstChapter": 1, "lastChapter": 28},
+    {"id": "ROM", "name": "Romans", "abbreviations": ["Rom", "Ro", "Rm"], "firstChapter": 1, "lastChapter": 16},
+    {"id": "1CO", "name": "1 Corinthians", "abbreviations": ["1Cor", "1Co", "I Cor", "1 Cor"], "firstChapter": 1, "lastChapter": 16},
+    {"id": "2CO", "name": "2 Corinthians", "abbreviations": ["2Cor", "2Co", "II Cor", "2 Cor"], "firstChapter": 1, "lastChapter": 13},
+    {"id": "GAL", "name": "Galatians", "abbreviations": ["Gal", "Ga"], "firstChapter": 1, "lastChapter": 6},
+    {"id": "EPH", "name": "Ephesians", "abbreviations": ["Eph", "Ep"], "firstChapter": 1, "lastChapter": 6},
+    {"id": "PHP", "name": "Philippians", "abbreviations": ["Phil", "Php", "Pp"], "firstChapter": 1, "lastChapter": 4},
+    {"id": "COL", "name": "Colossians", "abbreviations": ["Col", "Co"], "firstChapter": 1, "lastChapter": 4},
+    {"id": "1TH", "name": "1 Thessalonians", "abbreviations": ["1Thess", "1Th", "I Thess", "1 Thess"], "firstChapter": 1, "lastChapter": 5},
+    {"id": "2TH", "name": "2 Thessalonians", "abbreviations": ["2Thess", "2Th", "II Thess", "2 Thess"], "firstChapter": 1, "lastChapter": 3},
+    {"id": "1TI", "name": "1 Timothy", "abbreviations": ["1Tim", "1Ti", "I Tim", "1 Tim"], "firstChapter": 1, "lastChapter": 6},
+    {"id": "2TI", "name": "2 Timothy", "abbreviations": ["2Tim", "2Ti", "II Tim", "2 Tim"], "firstChapter": 1, "lastChapter": 4},
+    {"id": "TIT", "name": "Titus", "abbreviations": ["Tit", "Ti"], "firstChapter": 1, "lastChapter": 3},
+    {"id": "PHM", "name": "Philemon", "abbreviations": ["Phlm", "Phm", "Pm"], "firstChapter": 1, "lastChapter": 1},
+    {"id": "HEB", "name": "Hebrews", "abbreviations": ["Heb", "He"], "firstChapter": 1, "lastChapter": 13},
+    {"id": "JAS", "name": "James", "abbreviations": ["Jas", "Jm"], "firstChapter": 1, "lastChapter": 5},
+    {"id": "1PE", "name": "1 Peter", "abbreviations": ["1Pet", "1Pe", "1Pt", "I Pet", "1 Pet"], "firstChapter": 1, "lastChapter": 5},
+    {"id": "2PE", "name": "2 Peter", "abbreviations": ["2Pet", "2Pe", "2Pt", "II Pet", "2 Pet"], "firstChapter": 1, "lastChapter": 3},
+    {"id": "1JN", "name": "1 John", "abbreviations": ["1John", "1Jn", "1J", "I Jn", "1 Jn"], "firstChapter": 1, "lastChapter": 5},
+    {"id": "2JN", "name": "2 John", "abbreviations": ["2John", "2Jn", "2J", "II Jn", "2 Jn"], "firstChapter": 1, "lastChapter": 1},
+    {"id": "3JN", "name": "3 John", "abbreviations": ["3John", "3Jn", "3J", "III Jn", "3 Jn"], "firstChapter": 1, "lastChapter": 1},
+    {"id": "JUD", "name": "Jude", "abbreviations": ["Jude", "Jud", "Jd"], "firstChapter": 1, "lastChapter": 1},
+    {"id": "REV", "name": "Revelation", "abbreviations": ["Rev", "Re", "Rv"], "firstChapter": 1, "lastChapter": 22},
+]
+
+NAME_TO_ID = {b["name"]: b["id"] for b in BOOKS_METADATA}
+NAME_TO_ID["Psalm"] = "PSA"  # Handle singular naming variant in Excel
+
+def build_data(excel_path="bsb.xlsx", output_dir="data"):
+    os.makedirs(output_dir, exist_ok=True)
+
+    # 1. Write metadata.json
+    metadata_path = os.path.join(output_dir, "metadata.json")
+    with open(metadata_path, "w", encoding="utf-8") as f:
+        json.dump({"translation": "Berean Standard Bible", "books": BOOKS_METADATA}, f, indent=2)
+    print(f"Created {metadata_path}")
+
+    # 2. Read verses from Excel
+    print("Reading Excel file...")
+    df = pd.read_excel(excel_path, header=None)
+    # Rows 0-2 are headers, verses start at row 3
+    verses_df = df.iloc[3:].copy()
+    verses_df.columns = ["id", "reference", "text"]
+
+    pattern = re.compile(r"^(.+?)\s+(\d+):(\d+)$")
+    chapters = {}  # (book_id, chap_num) -> [verses]
+
+    for _, row in verses_df.iterrows():
+        ref = str(row["reference"]).strip()
+        m = pattern.match(ref)
+        if not m:
+            continue
+        book_name, chap_str, verse_str = m.groups()
+        b_id = NAME_TO_ID[book_name]
+        chap_num = int(chap_str)
+        verse_num = int(verse_str)
+        text = str(row["text"]).strip()
+
+        key = (b_id, chap_num)
+        if key not in chapters:
+            chapters[key] = []
+        
+        # Ensure 0-indexed alignment (index = verse - 1)
+        while len(chapters[key]) < verse_num - 1:
+            chapters[key].append("")
+        chapters[key].append(text)
+
+    # 3. Save each chapter file
+    for (b_id, chap_num), verses in chapters.items():
+        book_folder = os.path.join(output_dir, b_id)
+        os.makedirs(book_folder, exist_ok=True)
+        file_path = os.path.join(book_folder, f"{chap_num}.json")
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(verses, f, ensure_ascii=False, indent=2)
+
+    print(f"Done! Successfully wrote {len(chapters)} chapter JSON files to '{output_dir}/'.")
+
+if __name__ == "__main__":
+    build_data()
