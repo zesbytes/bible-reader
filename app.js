@@ -171,7 +171,7 @@ async function loadChapter(bookIdx, chapterNum, targetVerse = null) {
   });
   updateNavButtons();
 
-  // 1. Check if the chapter can be sliced from the in-memory corpus
+  // 1. Try to slice directly from cached in-memory text
   const memoryVerses = sliceChapterFromMemory(currentBookIndex, currentChapter);
   if (memoryVerses) {
     renderVerses(memoryVerses);
@@ -325,7 +325,7 @@ async function ensureCorpusLoaded() {
   }
 }
 
-// --- Search Engine & Exact Phrase Highlighting ---
+// --- Search Engine with Word Boundaries & Highlighting ---
 
 function parseReference(query) {
   const clean = query.trim().replace(/\s+/g, " ");
@@ -368,19 +368,21 @@ function lineIndexToRef(lineIndex, testament) {
   return null;
 }
 
-// Highlights the whole matching phrase as a single span
-function highlightSnippet(text, cleanQuery) {
-  const words = cleanQuery.trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return escapeHTML(text);
-
+// Builds regex enforcing whole-word boundaries (\b) at phrase start and end
+function buildPhraseRegex(query) {
+  const words = query.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return null;
   const escapedWords = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-  // Matches the sequence of words even if separated by punctuation or spaces
   const phrasePattern = "\\b" + escapedWords.join("[^a-zA-Z0-9]+") + "\\b";
-  const regex = new RegExp(`(${phrasePattern})`, "gi");
+  return new RegExp(phrasePattern, "i");
+}
 
-  const parts = text.split(regex);
+function highlightSnippet(text, phraseRegex) {
+  if (!phraseRegex) return escapeHTML(text);
+  const globalRegex = new RegExp(phraseRegex.source, "gi");
+  const parts = text.split(globalRegex);
   return parts
-    .map((part) => (regex.test(part) ? `<mark>${escapeHTML(part)}</mark>` : escapeHTML(part)))
+    .map((part) => (globalRegex.test(part) ? `<mark>${escapeHTML(part)}</mark>` : escapeHTML(part)))
     .join("");
 }
 
@@ -413,31 +415,34 @@ async function executePhraseSearch(query) {
     return;
   }
 
+  const phraseRegex = buildPhraseRegex(cleanQuery);
+  if (!phraseRegex) return;
+
   if (searchStatus) searchStatus.textContent = `Searching for "${query}"...`;
   const results = [];
 
-  // Search OT
+  // Search OT with whole-word regex
   for (let i = 0; i < memoryCorpus.ot.length; i++) {
     const raw = memoryCorpus.ot[i];
-    if (raw.toLowerCase().includes(cleanQuery)) {
+    if (phraseRegex.test(raw)) {
       const ref = lineIndexToRef(i, "OT");
       if (ref) results.push({ ...ref, text: raw });
     }
   }
 
-  // Search NT
+  // Search NT with whole-word regex
   for (let i = 0; i < memoryCorpus.nt.length; i++) {
     const raw = memoryCorpus.nt[i];
-    if (raw.toLowerCase().includes(cleanQuery)) {
+    if (phraseRegex.test(raw)) {
       const ref = lineIndexToRef(i, "NT");
       if (ref) results.push({ ...ref, text: raw });
     }
   }
 
-  renderSearchResults(query, cleanQuery, results);
+  renderSearchResults(query, phraseRegex, results);
 }
 
-function renderSearchResults(originalQuery, cleanQuery, results) {
+function renderSearchResults(originalQuery, phraseRegex, results) {
   if (!searchResultsList) return;
   searchResultsList.innerHTML = "";
 
@@ -462,7 +467,7 @@ function renderSearchResults(originalQuery, cleanQuery, results) {
 
     const textSpan = document.createElement("span");
     textSpan.className = "search-item-text";
-    textSpan.innerHTML = highlightSnippet(item.text, cleanQuery);
+    textSpan.innerHTML = highlightSnippet(item.text, phraseRegex);
 
     li.appendChild(titleSpan);
     li.appendChild(textSpan);
