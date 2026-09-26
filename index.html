@@ -10,7 +10,14 @@
   <header class="app-header">
     <div class="header-row header-controls">
       <div class="search-box">
-        <input type="text" id="quick-search" placeholder="Search: John 3:16, Gen 1..." autocomplete="off" autocorrect="off" autocapitalize="off" />
+        <input 
+          type="text" 
+          id="search-input" 
+          placeholder="Ref (John 3:16) or Phrase (son of man)..." 
+          autocomplete="off" 
+          autocorrect="off" 
+          autocapitalize="off" 
+        />
         <button id="search-btn" aria-label="Search">Go</button>
       </div>
       <div class="select-group">
@@ -49,7 +56,17 @@
     </button>
   </nav>
 
-  <!-- Scripture Body -->
+  <!-- Search Results Drawer / Modal -->
+  <section id="search-results-panel" class="search-panel hidden" aria-label="Search Results">
+    <div class="panel-header">
+      <span id="search-results-title">Search Results</span>
+      <button id="close-search-panel" aria-label="Close search panel">&times;</button>
+    </div>
+    <div id="search-status" class="search-status"></div>
+    <ul id="search-results-list" class="search-results-list"></ul>
+  </section>
+
+  <!-- Reader Area -->
   <main id="reader-container">
     <div id="chapter-content" class="chapter-content"></div>
   </main>

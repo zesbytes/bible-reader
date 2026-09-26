@@ -28,6 +28,7 @@ body {
   -webkit-text-size-adjust: 100%;
 }
 
+/* Header & Controls */
 .app-header {
   position: sticky;
   top: 0;
@@ -66,6 +67,7 @@ body {
   border: 1px solid var(--border-color);
   border-radius: 6px;
   background: var(--card-bg);
+  color: var(--text-color);
 }
 
 .search-box button {
@@ -111,7 +113,7 @@ select {
   max-width: 140px;
 }
 
-/* Nav Toolbar (Grid layout keeps elements on one row) */
+/* Nav Toolbar (Grid keeps controls on one line without wrapping) */
 .nav-toolbar {
   display: grid;
   grid-template-columns: minmax(70px, 110px) minmax(50px, 85px) 1fr minmax(50px, 85px) minmax(70px, 110px);
@@ -169,6 +171,83 @@ select {
   pointer-events: none;
 }
 
+/* Search Results Panel */
+.search-panel {
+  max-width: 760px;
+  margin: 1rem auto;
+  padding: 0 1rem;
+}
+
+.search-panel.hidden {
+  display: none;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  background-color: #f1f5f9;
+  border: 1px solid var(--border-color);
+  border-radius: 6px 6px 0 0;
+  font-weight: 700;
+}
+
+.panel-header button {
+  background: none;
+  border: none;
+  font-size: 1.4rem;
+  cursor: pointer;
+  color: var(--text-muted);
+  line-height: 1;
+}
+
+.search-status {
+  padding: 0.4rem 0.75rem;
+  background: #ffffff;
+  border: 1px solid var(--border-color);
+  border-top: none;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+.search-results-list {
+  list-style: none;
+  max-height: 380px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-top: none;
+  border-radius: 0 0 6px 6px;
+  background: #ffffff;
+}
+
+.search-item {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid #f1f5f9;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  transition: background 0.15s ease;
+}
+
+.search-item:hover {
+  background-color: #f8fafc;
+}
+
+.search-item-ref {
+  font-weight: 700;
+  color: var(--accent-color);
+  font-size: 0.92rem;
+}
+
+.search-item-text {
+  font-size: 0.9rem;
+  color: var(--text-color);
+  line-height: 1.4;
+}
+
+/* Reader Container */
 #reader-container {
   max-width: 760px;
   margin: 1.5rem auto 1rem;
@@ -206,7 +285,7 @@ select {
   border-radius: 4px;
 }
 
-/* Mobile optimizations */
+/* Mobile Optimizations */
 @media (max-width: 580px) {
   .app-header {
     padding: 0.4rem 0.5rem;

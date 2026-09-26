@@ -7,55 +7,69 @@ let currentTargetVerse = null;
 // Search Cache State
 let refsLookup = null;       // Array of "bookIndex:chapter:verse"
 let searchCorpus = null;     // { ot: string[], nt: string[] }
-let isPreloadingSearch = false;
-const OT_OFFSET = 23145;     // Number of verses in the Old Testament
+let isFetchingSearch = false;
+const OT_OFFSET = 23145;     // Verses in the Old Testament
 
-// DOM Elements
+// DOM Elements (supports both newer and older IDs gracefully)
 const versionSelect = document.getElementById("version-select");
 const bookSelect = document.getElementById("book-select");
 const chapterSelect = document.getElementById("chapter-select");
 const chapterContent = document.getElementById("chapter-content");
-const searchInput = document.getElementById("search-input");
+const searchInput = document.getElementById("search-input") || document.getElementById("quick-search");
 const searchBtn = document.getElementById("search-btn");
 
-// Search Panel Elements
-const searchPanel = document.getElementById("search-results-panel");
+// Search Panel Elements (optional - won't crash if omitted)
+const searchPanel = document.getElementById("search-results-panel") || document.getElementById("search-panel");
 const searchStatus = document.getElementById("search-status");
 const searchResultsList = document.getElementById("search-results-list");
 const closeSearchPanelBtn = document.getElementById("close-search-panel");
 
 // Dual Navigation Elements (Top & Bottom Toolbars)
-const allPrevBookBtns = document.querySelectorAll(".nav-prev-book");
-const allNextBookBtns = document.querySelectorAll(".nav-next-book");
-const allPrevChapBtns = document.querySelectorAll(".nav-prev-chap");
-const allNextChapBtns = document.querySelectorAll(".nav-next-chap");
-const allRefLabels = document.querySelectorAll(".current-reference");
+const allPrevBookBtns = document.querySelectorAll(".nav-prev-book, #btn-prev-book");
+const allNextBookBtns = document.querySelectorAll(".nav-next-book, #btn-next-book");
+const allPrevChapBtns = document.querySelectorAll(".nav-prev-chap, #btn-prev-chapter");
+const allNextChapBtns = document.querySelectorAll(".nav-next-chap, #btn-next-chapter");
+const allRefLabels = document.querySelectorAll(".current-reference, #current-reference");
 
 // --- Initialization ---
 
 async function init() {
+  // 1. Fetch metadata specifically
   try {
     const res = await fetch("data/metadata.json");
-    if (!res.ok) throw new Error("metadata.json not found");
-    metadata = await res.json();
-
-    currentVersion = metadata.defaultVersion || (metadata.versions && metadata.versions[0]?.id) || "BSB";
-
-    populateVersionDropdown();
-    populateBookDropdown();
-    setupEventListeners();
-
-    if (!handleHashChange()) {
-      loadChapter(currentBookIndex, 1);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: Failed to fetch data/metadata.json`);
     }
+    metadata = await res.json();
   } catch (err) {
-    console.error(err);
-    chapterContent.innerHTML = "<p style='color:#b91c1c; padding:1.5rem;'>Error loading Bible metadata. Please check that data/metadata.json is accessible.</p>";
+    console.error("Metadata load error:", err);
+    if (chapterContent) {
+      chapterContent.innerHTML = `<p style="color:#b91c1c; padding:1.5rem;">
+        <strong>Error loading metadata:</strong> ${err.message}<br>
+        <small>Verify that <code>data/metadata.json</code> exists and is accessible.</small>
+      </p>`;
+    }
+    return;
+  }
+
+  // 2. Determine initial version
+  currentVersion = metadata.defaultVersion || (metadata.versions && metadata.versions[0]?.id) || "BSB";
+
+  // 3. Setup UI safely
+  populateVersionDropdown();
+  populateBookDropdown();
+  setupEventListeners();
+
+  // 4. Initial chapter load
+  if (!handleHashChange()) {
+    loadChapter(currentBookIndex, 1);
   }
 }
 
 function populateVersionDropdown() {
+  if (!versionSelect) return;
   versionSelect.innerHTML = "";
+
   if (!metadata.versions || metadata.versions.length === 0) {
     const opt = document.createElement("option");
     opt.value = currentVersion;
@@ -75,6 +89,7 @@ function populateVersionDropdown() {
 }
 
 function populateBookDropdown() {
+  if (!bookSelect) return;
   bookSelect.innerHTML = "";
   metadata.books.forEach((b, idx) => {
     const opt = document.createElement("option");
@@ -85,6 +100,7 @@ function populateBookDropdown() {
 }
 
 function updateChapterDropdown(bookIdx) {
+  if (!chapterSelect) return;
   chapterSelect.innerHTML = "";
   const b = metadata.books[bookIdx];
   for (let c = b.firstChapter; c <= b.lastChapter; c++) {
@@ -103,11 +119,11 @@ async function loadChapter(bookIdx, chapterNum, targetVerse = null) {
   currentTargetVerse = targetVerse ? parseInt(targetVerse, 10) : null;
 
   const book = metadata.books[currentBookIndex];
-  bookSelect.value = currentBookIndex;
+  if (bookSelect) bookSelect.value = currentBookIndex;
 
   updateChapterDropdown(currentBookIndex);
-  chapterSelect.value = currentChapter;
-  versionSelect.value = currentVersion;
+  if (chapterSelect) chapterSelect.value = currentChapter;
+  if (versionSelect) versionSelect.value = currentVersion;
 
   const refText = `${book.name} ${currentChapter}`;
   allRefLabels.forEach((el) => {
@@ -117,7 +133,9 @@ async function loadChapter(bookIdx, chapterNum, targetVerse = null) {
   updateNavButtons();
 
   const url = `data/${currentVersion}/${book.id}/${currentChapter}.json`;
-  chapterContent.innerHTML = `<p style="color:var(--text-muted); padding:1rem 0;">Loading ${refText} (${currentVersion})...</p>`;
+  if (chapterContent) {
+    chapterContent.innerHTML = `<p style="color:var(--text-muted, #666); padding:1rem 0;">Loading ${refText} (${currentVersion})...</p>`;
+  }
 
   try {
     const res = await fetch(url);
@@ -138,11 +156,18 @@ async function loadChapter(bookIdx, chapterNum, targetVerse = null) {
       history.pushState(null, "", `#${hash}`);
     }
   } catch (err) {
-    chapterContent.innerHTML = `<p style="color:#b91c1c; padding:1.5rem 0;">Unable to load content for ${book.name} ${currentChapter} (${currentVersion}).<br><small>File expected: <code>${url}</code></small></p>`;
+    console.error("Chapter load error:", err);
+    if (chapterContent) {
+      chapterContent.innerHTML = `<p style="color:#b91c1c; padding:1.5rem 0;">
+        Unable to load content for <strong>${book.name} ${currentChapter}</strong> (${currentVersion}).<br>
+        <small>Expected file: <code>${url}</code></small>
+      </p>`;
+    }
   }
 }
 
 function renderVerses(versesArray) {
+  if (!chapterContent) return;
   chapterContent.innerHTML = "";
   versesArray.forEach((text, idx) => {
     const verseNum = idx + 1;
@@ -186,7 +211,7 @@ function updateNavButtons() {
   allNextChapBtns.forEach((btn) => (btn.disabled = isLastChap));
 }
 
-// --- Search: Reference vs Phrase ---
+// --- Search Dispatching (Reference vs Phrase) ---
 
 function parseReference(query) {
   const clean = query.trim().replace(/\s+/g, " ");
@@ -207,71 +232,76 @@ function parseReference(query) {
   return { bookIndex, chapter: chapterPart, verse: versePart };
 }
 
-async function preloadSearchCorpus() {
-  if (searchCorpus || isPreloadingSearch) return;
-  isPreloadingSearch = true;
+// Downloads search files on-demand only when a word search runs
+async function loadSearchCorpus() {
+  if (searchCorpus && refsLookup) return;
+  if (isFetchingSearch) return;
+  isFetchingSearch = true;
 
   try {
-    const cache = await caches.open("bible-search-v1");
+    const cache = "caches" in window ? await caches.open("bible-search-v1") : null;
     const refsUrl = `data/${currentVersion}/search/refs.json`;
     const otUrl = `data/${currentVersion}/search/ot.txt`;
     const ntUrl = `data/${currentVersion}/search/nt.txt`;
 
-    const fetchWithCache = async (url, isJson = false) => {
-      let res = await cache.match(url);
+    const fetchResource = async (url, isJson = false) => {
+      let res = cache ? await cache.match(url) : null;
       if (!res) {
         res = await fetch(url);
-        if (res.ok) await cache.put(url, res.clone());
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${url}`);
+        if (cache) await cache.put(url, res.clone());
       }
       return isJson ? await res.json() : (await res.text()).split("\n");
     };
 
     const [refsData, otData, ntData] = await Promise.all([
-      fetchWithCache(refsUrl, true),
-      fetchWithCache(otUrl, false),
-      fetchWithCache(ntUrl, false)
+      fetchResource(refsUrl, true),
+      fetchResource(otUrl, false),
+      fetchResource(ntUrl, false)
     ]);
 
     refsLookup = refsData;
     searchCorpus = { ot: otData, nt: ntData };
   } catch (err) {
-    console.warn("Search corpus could not be preloaded:", err);
+    console.error("Failed to load search index:", err);
   } finally {
-    isPreloadingSearch = false;
+    isFetchingSearch = false;
   }
 }
 
 async function executePhraseSearch(query) {
-  searchPanel.classList.remove("hidden");
-  searchStatus.textContent = "Loading search index...";
-  searchResultsList.innerHTML = "";
+  if (searchPanel) searchPanel.classList.remove("hidden");
+  if (searchStatus) searchStatus.textContent = "Loading search index...";
+  if (searchResultsList) searchResultsList.innerHTML = "";
 
-  if (!searchCorpus) {
-    await preloadSearchCorpus();
+  if (!searchCorpus || !refsLookup) {
+    await loadSearchCorpus();
   }
 
   if (!searchCorpus || !refsLookup) {
-    searchStatus.textContent = "Search index files (ot.txt / nt.txt / refs.json) not found on server.";
+    if (searchStatus) {
+      searchStatus.textContent = `Search index files not found for ${currentVersion} (expected in data/${currentVersion}/search/).`;
+    }
     return;
   }
 
   const cleanNeedle = query.toLowerCase().replace(/[^a-z0-9\s]/g, " ").trim().replace(/\s+/g, " ");
   if (!cleanNeedle) {
-    searchStatus.textContent = "Please enter valid text to search.";
+    if (searchStatus) searchStatus.textContent = "Please enter valid text to search.";
     return;
   }
 
-  searchStatus.textContent = `Searching for "${query}"...`;
+  if (searchStatus) searchStatus.textContent = `Searching for "${query}"...`;
   const results = [];
 
-  // 1. Search OT (Verse IDs 1 to 23,145)
+  // Search OT
   for (let i = 0; i < searchCorpus.ot.length; i++) {
     if (searchCorpus.ot[i].includes(cleanNeedle)) {
       results.push({ vid: i + 1, snippet: searchCorpus.ot[i] });
     }
   }
 
-  // 2. Search NT (Verse IDs 23,146 to 31,102)
+  // Search NT
   for (let i = 0; i < searchCorpus.nt.length; i++) {
     if (searchCorpus.nt[i].includes(cleanNeedle)) {
       results.push({ vid: OT_OFFSET + i + 1, snippet: searchCorpus.nt[i] });
@@ -282,14 +312,15 @@ async function executePhraseSearch(query) {
 }
 
 function renderSearchResults(query, results) {
+  if (!searchResultsList) return;
   searchResultsList.innerHTML = "";
 
   if (results.length === 0) {
-    searchStatus.textContent = `No matches found for "${query}".`;
+    if (searchStatus) searchStatus.textContent = `No matches found for "${query}".`;
     return;
   }
 
-  searchStatus.textContent = `Found ${results.length} result${results.length > 1 ? "s" : ""} for "${query}":`;
+  if (searchStatus) searchStatus.textContent = `Found ${results.length} match${results.length > 1 ? "es" : ""} for "${query}":`;
   const fragment = document.createDocumentFragment();
 
   results.forEach((item) => {
@@ -314,7 +345,7 @@ function renderSearchResults(query, results) {
     li.appendChild(textSpan);
 
     li.addEventListener("click", () => {
-      searchPanel.classList.add("hidden");
+      if (searchPanel) searchPanel.classList.add("hidden");
       loadChapter(parseInt(bIdx, 10), parseInt(chap, 10), parseInt(verse, 10));
     });
 
@@ -325,16 +356,18 @@ function renderSearchResults(query, results) {
 }
 
 function handleSearch() {
+  if (!searchInput) return;
   const val = searchInput.value.trim();
   if (!val) return;
 
   const refResult = parseReference(val);
   if (refResult) {
-    searchPanel.classList.add("hidden");
+    if (searchPanel) searchPanel.classList.add("hidden");
     loadChapter(refResult.bookIndex, refResult.chapter, refResult.verse);
     searchInput.value = "";
     searchInput.blur();
   } else {
+    // Word / Phrase search: only downloads search corpus now
     executePhraseSearch(val);
   }
 }
@@ -392,32 +425,42 @@ function navigateNextChapter() {
 }
 
 function setupEventListeners() {
-  // Preload search index in the background the first time the user focuses the input
-  searchInput.addEventListener("focus", () => preloadSearchCorpus(), { once: true });
+  if (versionSelect) {
+    versionSelect.addEventListener("change", (e) => {
+      currentVersion = e.target.value;
+      searchCorpus = null;
+      refsLookup = null;
+      loadChapter(currentBookIndex, currentChapter, currentTargetVerse);
+    });
+  }
 
-  versionSelect.addEventListener("change", (e) => {
-    currentVersion = e.target.value;
-    searchCorpus = null;
-    refsLookup = null;
-    loadChapter(currentBookIndex, currentChapter, currentTargetVerse);
-  });
+  if (bookSelect) {
+    bookSelect.addEventListener("change", (e) => {
+      loadChapter(parseInt(e.target.value, 10), 1);
+    });
+  }
 
-  bookSelect.addEventListener("change", (e) => {
-    loadChapter(parseInt(e.target.value, 10), 1);
-  });
+  if (chapterSelect) {
+    chapterSelect.addEventListener("change", (e) => {
+      loadChapter(currentBookIndex, parseInt(e.target.value, 10));
+    });
+  }
 
-  chapterSelect.addEventListener("change", (e) => {
-    loadChapter(currentBookIndex, parseInt(e.target.value, 10));
-  });
+  if (searchBtn) {
+    searchBtn.addEventListener("click", handleSearch);
+  }
 
-  searchBtn.addEventListener("click", handleSearch);
-  searchInput.addEventListener("keypress", (e) => {
-    if (e.key === "Enter") handleSearch();
-  });
+  if (searchInput) {
+    searchInput.addEventListener("keypress", (e) => {
+      if (e.key === "Enter") handleSearch();
+    });
+  }
 
-  closeSearchPanelBtn.addEventListener("click", () => {
-    searchPanel.classList.add("hidden");
-  });
+  if (closeSearchPanelBtn && searchPanel) {
+    closeSearchPanelBtn.addEventListener("click", () => {
+      searchPanel.classList.add("hidden");
+    });
+  }
 
   allPrevBookBtns.forEach((btn) => {
     btn.addEventListener("click", () => {
