@@ -61,7 +61,6 @@ async function init() {
     loadChapter(currentBookIndex, 1);
   }
 
-  // Adjust translation labels dynamically on resize (desktop full name vs mobile abbr)
   window.addEventListener("resize", populateVersionDropdown);
 }
 
@@ -87,7 +86,6 @@ function populateVersionDropdown() {
   versions.forEach((v) => {
     const opt = document.createElement("option");
     opt.value = v.id;
-    // Desktop: "Berean Standard Bible (BSB)" | Mobile: "BSB"
     opt.textContent = isMobile ? (v.abbr || v.id) : (v.name ? `${v.name} (${v.abbr || v.id})` : v.id);
     opt.title = v.name || v.id;
     if (v.id === currentVal) opt.selected = true;
@@ -173,7 +171,7 @@ async function loadChapter(bookIdx, chapterNum, targetVerse = null) {
   });
   updateNavButtons();
 
-  // 1. Check if the chapter can be sliced from the downloaded memory corpus
+  // 1. Check if the chapter can be sliced from the in-memory corpus
   const memoryVerses = sliceChapterFromMemory(currentBookIndex, currentChapter);
   if (memoryVerses) {
     renderVerses(memoryVerses);
@@ -181,7 +179,7 @@ async function loadChapter(bookIdx, chapterNum, targetVerse = null) {
     return;
   }
 
-  // 2. Fall back to the individual chapter JSON file
+  // 2. Fall back to individual chapter JSON file
   const url = `data/${currentVersion}/${book.id}/${currentChapter}.json`;
   if (chapterContent) {
     chapterContent.innerHTML = `<p style="color:var(--text-muted); padding:1rem 0;">Loading ${refText} (${currentVersion})...</p>`;
@@ -327,7 +325,7 @@ async function ensureCorpusLoaded() {
   }
 }
 
-// --- Search Engine & Result Highlighting ---
+// --- Search Engine & Exact Phrase Highlighting ---
 
 function parseReference(query) {
   const clean = query.trim().replace(/\s+/g, " ");
@@ -370,12 +368,15 @@ function lineIndexToRef(lineIndex, testament) {
   return null;
 }
 
+// Highlights the whole matching phrase as a single span
 function highlightSnippet(text, cleanQuery) {
-  const words = cleanQuery.split(/\s+/).filter(Boolean);
+  const words = cleanQuery.trim().split(/\s+/).filter(Boolean);
   if (words.length === 0) return escapeHTML(text);
 
-  const escapedTerms = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-  const regex = new RegExp(`(${escapedTerms.join("|")})`, "gi");
+  const escapedWords = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  // Matches the sequence of words even if separated by punctuation or spaces
+  const phrasePattern = "\\b" + escapedWords.join("[^a-zA-Z0-9]+") + "\\b";
+  const regex = new RegExp(`(${phrasePattern})`, "gi");
 
   const parts = text.split(regex);
   return parts
@@ -415,7 +416,7 @@ async function executePhraseSearch(query) {
   if (searchStatus) searchStatus.textContent = `Searching for "${query}"...`;
   const results = [];
 
-  // 1. Search Old Testament
+  // Search OT
   for (let i = 0; i < memoryCorpus.ot.length; i++) {
     const raw = memoryCorpus.ot[i];
     if (raw.toLowerCase().includes(cleanQuery)) {
@@ -424,7 +425,7 @@ async function executePhraseSearch(query) {
     }
   }
 
-  // 2. Search New Testament
+  // Search NT
   for (let i = 0; i < memoryCorpus.nt.length; i++) {
     const raw = memoryCorpus.nt[i];
     if (raw.toLowerCase().includes(cleanQuery)) {
