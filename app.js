@@ -4,20 +4,34 @@ let currentBookIndex = 0;
 let currentChapter = 1;
 let currentTargetVerse = null;
 
+// Search Cache State
+let refsLookup = null;       // Array of "bookIndex:chapter:verse"
+let searchCorpus = null;     // { ot: string[], nt: string[] }
+let isPreloadingSearch = false;
+const OT_OFFSET = 23145;     // Number of verses in the Old Testament
+
 // DOM Elements
 const versionSelect = document.getElementById("version-select");
 const bookSelect = document.getElementById("book-select");
 const chapterSelect = document.getElementById("chapter-select");
 const chapterContent = document.getElementById("chapter-content");
-const searchInput = document.getElementById("quick-search");
+const searchInput = document.getElementById("search-input");
 const searchBtn = document.getElementById("search-btn");
 
-// Dual Navigation elements (Top & Bottom toolbars)
+// Search Panel Elements
+const searchPanel = document.getElementById("search-results-panel");
+const searchStatus = document.getElementById("search-status");
+const searchResultsList = document.getElementById("search-results-list");
+const closeSearchPanelBtn = document.getElementById("close-search-panel");
+
+// Dual Navigation Elements (Top & Bottom Toolbars)
 const allPrevBookBtns = document.querySelectorAll(".nav-prev-book");
 const allNextBookBtns = document.querySelectorAll(".nav-next-book");
 const allPrevChapBtns = document.querySelectorAll(".nav-prev-chap");
 const allNextChapBtns = document.querySelectorAll(".nav-next-chap");
 const allRefLabels = document.querySelectorAll(".current-reference");
+
+// --- Initialization ---
 
 async function init() {
   try {
@@ -36,7 +50,7 @@ async function init() {
     }
   } catch (err) {
     console.error(err);
-    chapterContent.innerHTML = "<p>Error loading Bible metadata. Please verify that data/metadata.json is accessible.</p>";
+    chapterContent.innerHTML = "<p style='color:#b91c1c; padding:1.5rem;'>Error loading Bible metadata. Please check that data/metadata.json is accessible.</p>";
   }
 }
 
@@ -81,6 +95,8 @@ function updateChapterDropdown(bookIdx) {
   }
 }
 
+// --- Chapter Loading & Rendering ---
+
 async function loadChapter(bookIdx, chapterNum, targetVerse = null) {
   currentBookIndex = bookIdx;
   currentChapter = parseInt(chapterNum, 10);
@@ -93,7 +109,6 @@ async function loadChapter(bookIdx, chapterNum, targetVerse = null) {
   chapterSelect.value = currentChapter;
   versionSelect.value = currentVersion;
 
-  // Update top & bottom labels and buttons
   const refText = `${book.name} ${currentChapter}`;
   allRefLabels.forEach((el) => {
     el.textContent = refText;
@@ -101,7 +116,6 @@ async function loadChapter(bookIdx, chapterNum, targetVerse = null) {
   });
   updateNavButtons();
 
-  // Load from subfolder: data/{VERSION}/{BOOK_ID}/{CHAPTER}.json
   const url = `data/${currentVersion}/${book.id}/${currentChapter}.json`;
   chapterContent.innerHTML = `<p style="color:var(--text-muted); padding:1rem 0;">Loading ${refText} (${currentVersion})...</p>`;
 
@@ -124,7 +138,7 @@ async function loadChapter(bookIdx, chapterNum, targetVerse = null) {
       history.pushState(null, "", `#${hash}`);
     }
   } catch (err) {
-    chapterContent.innerHTML = `<p style="color:#b91c1c; padding:1.5rem 0;">Unable to load content for ${book.name} ${currentChapter} in translation <strong>${currentVersion}</strong>.<br><small>File expected: <code>${url}</code></small></p>`;
+    chapterContent.innerHTML = `<p style="color:#b91c1c; padding:1.5rem 0;">Unable to load content for ${book.name} ${currentChapter} (${currentVersion}).<br><small>File expected: <code>${url}</code></small></p>`;
   }
 }
 
@@ -161,7 +175,6 @@ function scrollToVerse(verseNum) {
 
 function updateNavButtons() {
   const book = metadata.books[currentBookIndex];
-
   const isFirstBook = currentBookIndex <= 0;
   const isLastBook = currentBookIndex >= metadata.books.length - 1;
   const isFirstChap = isFirstBook && currentChapter === book.firstChapter;
@@ -173,11 +186,12 @@ function updateNavButtons() {
   allNextChapBtns.forEach((btn) => (btn.disabled = isLastChap));
 }
 
-function parseSearch(query) {
+// --- Search: Reference vs Phrase ---
+
+function parseReference(query) {
   const clean = query.trim().replace(/\s+/g, " ");
   const regex = /^((?:[1-3]\s+)?[A-Za-z]+)\s*(\d+)?(?::|\s+)?(\d+)?$/;
   const match = clean.match(regex);
-
   if (!match) return null;
 
   const bookPart = match[1].toLowerCase().replace(/\s+/g, "");
@@ -193,18 +207,139 @@ function parseSearch(query) {
   return { bookIndex, chapter: chapterPart, verse: versePart };
 }
 
+async function preloadSearchCorpus() {
+  if (searchCorpus || isPreloadingSearch) return;
+  isPreloadingSearch = true;
+
+  try {
+    const cache = await caches.open("bible-search-v1");
+    const refsUrl = `data/${currentVersion}/search/refs.json`;
+    const otUrl = `data/${currentVersion}/search/ot.txt`;
+    const ntUrl = `data/${currentVersion}/search/nt.txt`;
+
+    const fetchWithCache = async (url, isJson = false) => {
+      let res = await cache.match(url);
+      if (!res) {
+        res = await fetch(url);
+        if (res.ok) await cache.put(url, res.clone());
+      }
+      return isJson ? await res.json() : (await res.text()).split("\n");
+    };
+
+    const [refsData, otData, ntData] = await Promise.all([
+      fetchWithCache(refsUrl, true),
+      fetchWithCache(otUrl, false),
+      fetchWithCache(ntUrl, false)
+    ]);
+
+    refsLookup = refsData;
+    searchCorpus = { ot: otData, nt: ntData };
+  } catch (err) {
+    console.warn("Search corpus could not be preloaded:", err);
+  } finally {
+    isPreloadingSearch = false;
+  }
+}
+
+async function executePhraseSearch(query) {
+  searchPanel.classList.remove("hidden");
+  searchStatus.textContent = "Loading search index...";
+  searchResultsList.innerHTML = "";
+
+  if (!searchCorpus) {
+    await preloadSearchCorpus();
+  }
+
+  if (!searchCorpus || !refsLookup) {
+    searchStatus.textContent = "Search index files (ot.txt / nt.txt / refs.json) not found on server.";
+    return;
+  }
+
+  const cleanNeedle = query.toLowerCase().replace(/[^a-z0-9\s]/g, " ").trim().replace(/\s+/g, " ");
+  if (!cleanNeedle) {
+    searchStatus.textContent = "Please enter valid text to search.";
+    return;
+  }
+
+  searchStatus.textContent = `Searching for "${query}"...`;
+  const results = [];
+
+  // 1. Search OT (Verse IDs 1 to 23,145)
+  for (let i = 0; i < searchCorpus.ot.length; i++) {
+    if (searchCorpus.ot[i].includes(cleanNeedle)) {
+      results.push({ vid: i + 1, snippet: searchCorpus.ot[i] });
+    }
+  }
+
+  // 2. Search NT (Verse IDs 23,146 to 31,102)
+  for (let i = 0; i < searchCorpus.nt.length; i++) {
+    if (searchCorpus.nt[i].includes(cleanNeedle)) {
+      results.push({ vid: OT_OFFSET + i + 1, snippet: searchCorpus.nt[i] });
+    }
+  }
+
+  renderSearchResults(query, results);
+}
+
+function renderSearchResults(query, results) {
+  searchResultsList.innerHTML = "";
+
+  if (results.length === 0) {
+    searchStatus.textContent = `No matches found for "${query}".`;
+    return;
+  }
+
+  searchStatus.textContent = `Found ${results.length} result${results.length > 1 ? "s" : ""} for "${query}":`;
+  const fragment = document.createDocumentFragment();
+
+  results.forEach((item) => {
+    const refString = refsLookup[item.vid - 1];
+    if (!refString) return;
+
+    const [bIdx, chap, verse] = refString.split(":");
+    const book = metadata.books[parseInt(bIdx, 10)];
+
+    const li = document.createElement("li");
+    li.className = "search-item";
+
+    const titleSpan = document.createElement("span");
+    titleSpan.className = "search-item-ref";
+    titleSpan.textContent = `${book.name} ${chap}:${verse}`;
+
+    const textSpan = document.createElement("span");
+    textSpan.className = "search-item-text";
+    textSpan.textContent = item.snippet;
+
+    li.appendChild(titleSpan);
+    li.appendChild(textSpan);
+
+    li.addEventListener("click", () => {
+      searchPanel.classList.add("hidden");
+      loadChapter(parseInt(bIdx, 10), parseInt(chap, 10), parseInt(verse, 10));
+    });
+
+    fragment.appendChild(li);
+  });
+
+  searchResultsList.appendChild(fragment);
+}
+
 function handleSearch() {
-  const val = searchInput.value;
+  const val = searchInput.value.trim();
   if (!val) return;
-  const result = parseSearch(val);
-  if (result) {
-    loadChapter(result.bookIndex, result.chapter, result.verse);
+
+  const refResult = parseReference(val);
+  if (refResult) {
+    searchPanel.classList.add("hidden");
+    loadChapter(refResult.bookIndex, refResult.chapter, refResult.verse);
     searchInput.value = "";
     searchInput.blur();
   } else {
-    alert("Reference not recognized. Examples: 'John 3:16', '1Cor 13', 'Gen 1'");
+    executePhraseSearch(val);
   }
 }
+
+// --- Navigation & Routing ---
 
 function handleHashChange() {
   const hash = window.location.hash.replace("#", "");
@@ -216,7 +351,6 @@ function handleHashChange() {
   let chapter = 1;
   let verse = null;
 
-  // Check if first token is a known version ID
   const isVer = metadata.versions && metadata.versions.some((v) => v.id.toUpperCase() === parts[0].toUpperCase());
   if (isVer) {
     ver = parts[0].toUpperCase();
@@ -258,8 +392,13 @@ function navigateNextChapter() {
 }
 
 function setupEventListeners() {
+  // Preload search index in the background the first time the user focuses the input
+  searchInput.addEventListener("focus", () => preloadSearchCorpus(), { once: true });
+
   versionSelect.addEventListener("change", (e) => {
     currentVersion = e.target.value;
+    searchCorpus = null;
+    refsLookup = null;
     loadChapter(currentBookIndex, currentChapter, currentTargetVerse);
   });
 
@@ -276,7 +415,10 @@ function setupEventListeners() {
     if (e.key === "Enter") handleSearch();
   });
 
-  // Bind dual buttons (both top and bottom bars)
+  closeSearchPanelBtn.addEventListener("click", () => {
+    searchPanel.classList.add("hidden");
+  });
+
   allPrevBookBtns.forEach((btn) => {
     btn.addEventListener("click", () => {
       if (currentBookIndex > 0) loadChapter(currentBookIndex - 1, 1);
@@ -289,13 +431,8 @@ function setupEventListeners() {
     });
   });
 
-  allPrevChapBtns.forEach((btn) => {
-    btn.addEventListener("click", navigatePrevChapter);
-  });
-
-  allNextChapBtns.forEach((btn) => {
-    btn.addEventListener("click", navigateNextChapter);
-  });
+  allPrevChapBtns.forEach((btn) => btn.addEventListener("click", navigatePrevChapter));
+  allNextChapBtns.forEach((btn) => btn.addEventListener("click", navigateNextChapter));
 
   window.addEventListener("hashchange", handleHashChange);
 }
