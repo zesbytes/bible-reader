@@ -56,7 +56,6 @@ async function init() {
   setupEventListeners();
   checkOfflineStatus();
 
-  // Handle URL hash routing or load Genesis 1
   if (!handleHashChange()) {
     loadChapter(currentBookIndex, 1);
   }
@@ -129,23 +128,29 @@ function updateChapterDropdown(bookIdx) {
 
 function sliceChapterFromMemory(bookIdx, chapNum) {
   if (!memoryCorpus) return null;
-  const book = metadata.books[bookIdx];
-  const lines = book.testament === "OT" ? memoryCorpus.ot : memoryCorpus.nt;
+  const targetBook = metadata.books[bookIdx];
+  if (!targetBook || !targetBook.chapterVerses) return null;
+
+  const isOT = (targetBook.testament === "OT" || bookIdx < 39);
+  const lines = isOT ? memoryCorpus.ot : memoryCorpus.nt;
   if (!lines || lines.length === 0) return null;
 
+  // Sum verses only for books in the matching testament up to the target book
   let offset = 0;
-  for (let i = 0; i < bookIdx; i++) {
-    const prevBook = metadata.books[i];
-    if (prevBook.testament === book.testament && prevBook.chapterVerses) {
-      offset += prevBook.chapterVerses.reduce((sum, v) => sum + v, 0);
-    }
+  for (let i = 0; i < metadata.books.length; i++) {
+    const b = metadata.books[i];
+    const bIsOT = (b.testament === "OT" || i < 39);
+    if (bIsOT !== isOT) continue;
+    if (i === bookIdx) break;
+    offset += b.chapterVerses.reduce((sum, v) => sum + v, 0);
   }
 
+  // Add verses from preceding chapters in this book
   for (let c = 1; c < chapNum; c++) {
-    offset += book.chapterVerses[c - 1];
+    offset += targetBook.chapterVerses[c - 1];
   }
 
-  const verseCount = book.chapterVerses[chapNum - 1];
+  const verseCount = targetBook.chapterVerses[chapNum - 1];
   return lines.slice(offset, offset + verseCount);
 }
 
@@ -173,7 +178,7 @@ async function loadChapter(bookIdx, chapterNum, targetVerse = null) {
 
   // 1. Try to slice directly from cached in-memory text
   const memoryVerses = sliceChapterFromMemory(currentBookIndex, currentChapter);
-  if (memoryVerses) {
+  if (memoryVerses && memoryVerses.length > 0) {
     renderVerses(memoryVerses);
     completeChapterLoad(book, targetVerse);
     return;
@@ -274,7 +279,10 @@ async function checkOfflineStatus() {
       markOfflineReady();
       if (!memoryCorpus) {
         const [otText, ntText] = await Promise.all([otRes.text(), ntRes.text()]);
-        memoryCorpus = { ot: otText.split("\n"), nt: ntText.split("\n") };
+        memoryCorpus = { 
+          ot: otText.replace(/\r/g, "").split("\n").filter(line => line.length > 0), 
+          nt: ntText.replace(/\r/g, "").split("\n").filter(line => line.length > 0) 
+        };
       }
     }
   } catch (e) {
@@ -310,7 +318,7 @@ async function ensureCorpusLoaded() {
         if (cache) await cache.put(url, res.clone());
       }
       const raw = await res.text();
-      return raw.split("\n");
+      return raw.replace(/\r/g, "").split("\n").filter(line => line.length > 0);
     };
 
     const [otData, ntData] = await Promise.all([fetchResource(otUrl), fetchResource(ntUrl)]);
@@ -325,7 +333,7 @@ async function ensureCorpusLoaded() {
   }
 }
 
-// --- Search Engine with Word Boundaries & Highlighting ---
+// --- Search Engine with Exact Phrase & Word Boundaries ---
 
 function parseReference(query) {
   const clean = query.trim().replace(/\s+/g, " ");
@@ -346,11 +354,15 @@ function parseReference(query) {
   return { bookIndex, chapter: chapterPart, verse: versePart };
 }
 
+// Accurately maps 0-indexed line within OT or NT directly to Book, Chapter, Verse
 function lineIndexToRef(lineIndex, testament) {
   let count = 0;
+  const isTargetOT = (testament === "OT");
+
   for (let bIdx = 0; bIdx < metadata.books.length; bIdx++) {
     const b = metadata.books[bIdx];
-    if (b.testament !== testament || !b.chapterVerses) continue;
+    const bIsOT = (b.testament === "OT" || bIdx < 39);
+    if (bIsOT !== isTargetOT || !b.chapterVerses) continue;
 
     for (let c = 0; c < b.chapterVerses.length; c++) {
       const vCount = b.chapterVerses[c];
@@ -368,22 +380,14 @@ function lineIndexToRef(lineIndex, testament) {
   return null;
 }
 
-// Builds regex enforcing whole-word boundaries (\b) at phrase start and end
+// Construct a regex enforcing whole-word boundaries at start/end of the phrase
 function buildPhraseRegex(query) {
   const words = query.trim().split(/\s+/).filter(Boolean);
   if (words.length === 0) return null;
   const escapedWords = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  // \b ensures exact word boundaries; allows spaces or punctuation between words
   const phrasePattern = "\\b" + escapedWords.join("[^a-zA-Z0-9]+") + "\\b";
   return new RegExp(phrasePattern, "i");
-}
-
-function highlightSnippet(text, phraseRegex) {
-  if (!phraseRegex) return escapeHTML(text);
-  const globalRegex = new RegExp(phraseRegex.source, "gi");
-  const parts = text.split(globalRegex);
-  return parts
-    .map((part) => (globalRegex.test(part) ? `<mark>${escapeHTML(part)}</mark>` : escapeHTML(part)))
-    .join("");
 }
 
 function escapeHTML(str) {
@@ -394,6 +398,25 @@ function escapeHTML(str) {
     "'": "&#39;",
     '"': "&quot;"
   }[tag] || tag));
+}
+
+// Highlights without regex state or HTML-escaping interference
+function highlightSnippet(text, phraseRegex) {
+  if (!phraseRegex) return escapeHTML(text);
+  const regex = new RegExp(phraseRegex.source, "gi");
+  let result = "";
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(text)) !== null) {
+    // Escape the normal text before the match
+    result += escapeHTML(text.slice(lastIndex, match.index));
+    // Wrap the exact matched phrase in <mark>
+    result += `<mark>${escapeHTML(match[0])}</mark>`;
+    lastIndex = regex.lastIndex;
+  }
+  result += escapeHTML(text.slice(lastIndex));
+  return result;
 }
 
 async function executePhraseSearch(query) {
@@ -409,7 +432,7 @@ async function executePhraseSearch(query) {
     return;
   }
 
-  const cleanQuery = query.toLowerCase().replace(/[^a-z0-9\s]/g, " ").trim().replace(/\s+/g, " ");
+  const cleanQuery = query.replace(/[^a-zA-Z0-9\s]/g, " ").trim().replace(/\s+/g, " ");
   if (!cleanQuery) {
     if (searchStatus) searchStatus.textContent = "Please enter text to search.";
     return;
@@ -421,21 +444,21 @@ async function executePhraseSearch(query) {
   if (searchStatus) searchStatus.textContent = `Searching for "${query}"...`;
   const results = [];
 
-  // Search OT with whole-word regex
+  // Search OT
   for (let i = 0; i < memoryCorpus.ot.length; i++) {
-    const raw = memoryCorpus.ot[i];
-    if (phraseRegex.test(raw)) {
+    const line = memoryCorpus.ot[i];
+    if (phraseRegex.test(line)) {
       const ref = lineIndexToRef(i, "OT");
-      if (ref) results.push({ ...ref, text: raw });
+      if (ref) results.push({ ...ref, text: line });
     }
   }
 
-  // Search NT with whole-word regex
+  // Search NT
   for (let i = 0; i < memoryCorpus.nt.length; i++) {
-    const raw = memoryCorpus.nt[i];
-    if (phraseRegex.test(raw)) {
+    const line = memoryCorpus.nt[i];
+    if (phraseRegex.test(line)) {
       const ref = lineIndexToRef(i, "NT");
-      if (ref) results.push({ ...ref, text: raw });
+      if (ref) results.push({ ...ref, text: line });
     }
   }
 
