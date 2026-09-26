@@ -21,7 +21,11 @@
         <button id="search-btn" aria-label="Search">Go</button>
       </div>
       <div class="select-group">
-        <select id="version-select" aria-label="Select Version" title="Translation Version"></select>
+        <select id="version-select" aria-label="Select Translation Version" title="Translation Version"></select>
+        <button id="offline-btn" class="offline-btn" title="Download translation for full offline usage and fast searching">
+          <span class="offline-icon">&#x2913;</span>
+          <span class="offline-text">Offline</span>
+        </button>
       </div>
     </div>
 
@@ -44,7 +48,10 @@
       <span class="btn-text">Prev</span>
     </button>
     
-    <div class="nav-title current-reference">Loading...</div>
+    <div class="nav-center-group">
+      <div class="nav-title current-reference">Loading...</div>
+      <div class="active-version-badge" id="active-version-label"></div>
+    </div>
     
     <button class="nav-btn nav-next-chap" title="Next Chapter">
       <span class="btn-text">Next</span>
@@ -56,7 +63,7 @@
     </button>
   </nav>
 
-  <!-- Search Results Drawer / Modal -->
+  <!-- Search Results Panel -->
   <section id="search-results-panel" class="search-panel hidden" aria-label="Search Results">
     <div class="panel-header">
       <span id="search-results-title">Search Results</span>
@@ -66,7 +73,7 @@
     <ul id="search-results-list" class="search-results-list"></ul>
   </section>
 
-  <!-- Reader Area -->
+  <!-- Main Reader Area -->
   <main id="reader-container">
     <div id="chapter-content" class="chapter-content"></div>
   </main>
@@ -82,7 +89,9 @@
       <span class="btn-text">Prev</span>
     </button>
     
-    <div class="nav-title current-reference">Loading...</div>
+    <div class="nav-center-group">
+      <div class="nav-title current-reference">Loading...</div>
+    </div>
     
     <button class="nav-btn nav-next-chap" title="Next Chapter">
       <span class="btn-text">Next</span>
