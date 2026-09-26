@@ -135,7 +135,6 @@ function sliceChapterFromMemory(bookIdx, chapNum) {
   const lines = isOT ? memoryCorpus.ot : memoryCorpus.nt;
   if (!lines || lines.length === 0) return null;
 
-  // Sum verses only for books in the matching testament up to the target book
   let offset = 0;
   for (let i = 0; i < metadata.books.length; i++) {
     const b = metadata.books[i];
@@ -145,7 +144,6 @@ function sliceChapterFromMemory(bookIdx, chapNum) {
     offset += b.chapterVerses.reduce((sum, v) => sum + v, 0);
   }
 
-  // Add verses from preceding chapters in this book
   for (let c = 1; c < chapNum; c++) {
     offset += targetBook.chapterVerses[c - 1];
   }
@@ -176,7 +174,6 @@ async function loadChapter(bookIdx, chapterNum, targetVerse = null) {
   });
   updateNavButtons();
 
-  // 1. Try to slice directly from cached in-memory text
   const memoryVerses = sliceChapterFromMemory(currentBookIndex, currentChapter);
   if (memoryVerses && memoryVerses.length > 0) {
     renderVerses(memoryVerses);
@@ -184,7 +181,6 @@ async function loadChapter(bookIdx, chapterNum, targetVerse = null) {
     return;
   }
 
-  // 2. Fall back to individual chapter JSON file
   const url = `data/${currentVersion}/${book.id}/${currentChapter}.json`;
   if (chapterContent) {
     chapterContent.innerHTML = `<p style="color:var(--text-muted); padding:1rem 0;">Loading ${refText} (${currentVersion})...</p>`;
@@ -354,7 +350,6 @@ function parseReference(query) {
   return { bookIndex, chapter: chapterPart, verse: versePart };
 }
 
-// Accurately maps 0-indexed line within OT or NT directly to Book, Chapter, Verse
 function lineIndexToRef(lineIndex, testament) {
   let count = 0;
   const isTargetOT = (testament === "OT");
@@ -380,12 +375,10 @@ function lineIndexToRef(lineIndex, testament) {
   return null;
 }
 
-// Construct a regex enforcing whole-word boundaries at start/end of the phrase
 function buildPhraseRegex(query) {
   const words = query.trim().split(/\s+/).filter(Boolean);
   if (words.length === 0) return null;
   const escapedWords = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-  // \b ensures exact word boundaries; allows spaces or punctuation between words
   const phrasePattern = "\\b" + escapedWords.join("[^a-zA-Z0-9]+") + "\\b";
   return new RegExp(phrasePattern, "i");
 }
@@ -400,7 +393,6 @@ function escapeHTML(str) {
   }[tag] || tag));
 }
 
-// Highlights without regex state or HTML-escaping interference
 function highlightSnippet(text, phraseRegex) {
   if (!phraseRegex) return escapeHTML(text);
   const regex = new RegExp(phraseRegex.source, "gi");
@@ -409,9 +401,7 @@ function highlightSnippet(text, phraseRegex) {
   let match;
 
   while ((match = regex.exec(text)) !== null) {
-    // Escape the normal text before the match
     result += escapeHTML(text.slice(lastIndex, match.index));
-    // Wrap the exact matched phrase in <mark>
     result += `<mark>${escapeHTML(match[0])}</mark>`;
     lastIndex = regex.lastIndex;
   }
@@ -421,8 +411,11 @@ function highlightSnippet(text, phraseRegex) {
 
 async function executePhraseSearch(query) {
   if (searchPanel) searchPanel.classList.remove("hidden");
+  if (searchResultsList) {
+    searchResultsList.innerHTML = "";
+    searchResultsList.scrollTop = 0;
+  }
   if (searchStatus) searchStatus.textContent = "Loading translation text...";
-  if (searchResultsList) searchResultsList.innerHTML = "";
 
   const loaded = await ensureCorpusLoaded();
   if (!loaded || !memoryCorpus) {
@@ -468,6 +461,7 @@ async function executePhraseSearch(query) {
 function renderSearchResults(originalQuery, phraseRegex, results) {
   if (!searchResultsList) return;
   searchResultsList.innerHTML = "";
+  searchResultsList.scrollTop = 0;
 
   if (results.length === 0) {
     if (searchStatus) searchStatus.textContent = `No matches found for "${originalQuery}".`;
@@ -504,6 +498,7 @@ function renderSearchResults(originalQuery, phraseRegex, results) {
   });
 
   searchResultsList.appendChild(fragment);
+  searchResultsList.scrollTop = 0;
 }
 
 function handleSearch() {
