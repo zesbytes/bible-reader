@@ -2,34 +2,80 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Berean Standard Bible Reader</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Bible Reader</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header class="app-header">
-    <div class="search-container">
-      <input type="text" id="quick-search" placeholder="Search: Gen 1:3 or John 3" />
-      <button id="search-btn">Go</button>
+    <div class="header-row header-controls">
+      <div class="search-box">
+        <input type="text" id="quick-search" placeholder="Search: John 3:16, Gen 1..." autocomplete="off" autocorrect="off" autocapitalize="off" />
+        <button id="search-btn" aria-label="Search">Go</button>
+      </div>
+      <div class="select-group">
+        <select id="version-select" aria-label="Select Version" title="Translation Version"></select>
+      </div>
     </div>
 
-    <div class="selectors-container">
-      <select id="book-select" aria-label="Select Book"></select>
-      <select id="chapter-select" aria-label="Select Chapter"></select>
+    <div class="header-row dropdown-row">
+      <div class="select-group full-width">
+        <select id="book-select" aria-label="Select Book"></select>
+        <select id="chapter-select" aria-label="Select Chapter"></select>
+      </div>
     </div>
   </header>
 
-  <nav class="nav-bar">
-    <button id="btn-prev-book" title="Previous Book">&laquo; Prev Book</button>
-    <button id="btn-prev-chapter" title="Previous Chapter">&lsaquo; Prev Chapter</button>
-    <span id="current-reference">Loading...</span>
-    <button id="btn-next-chapter" title="Next Chapter">Next Chapter &rsaquo;</button>
-    <button id="btn-next-book" title="Next Book">Next Book &raquo;</button>
+  <!-- Top Navigation Toolbar -->
+  <nav class="nav-toolbar nav-top" aria-label="Chapter Navigation Top">
+    <button class="nav-btn nav-prev-book" title="Previous Book">
+      <span class="btn-icon">&laquo;</span>
+      <span class="btn-text">Prev Book</span>
+    </button>
+    <button class="nav-btn nav-prev-chap" title="Previous Chapter">
+      <span class="btn-icon">&lsaquo;</span>
+      <span class="btn-text">Prev</span>
+    </button>
+    
+    <div class="nav-title current-reference">Loading...</div>
+    
+    <button class="nav-btn nav-next-chap" title="Next Chapter">
+      <span class="btn-text">Next</span>
+      <span class="btn-icon">&rsaquo;</span>
+    </button>
+    <button class="nav-btn nav-next-book" title="Next Book">
+      <span class="btn-text">Next Book</span>
+      <span class="btn-icon">&raquo;</span>
+    </button>
   </nav>
 
+  <!-- Scripture Body -->
   <main id="reader-container">
     <div id="chapter-content" class="chapter-content"></div>
   </main>
+
+  <!-- Bottom Navigation Toolbar -->
+  <nav class="nav-toolbar nav-bottom" aria-label="Chapter Navigation Bottom">
+    <button class="nav-btn nav-prev-book" title="Previous Book">
+      <span class="btn-icon">&laquo;</span>
+      <span class="btn-text">Prev Book</span>
+    </button>
+    <button class="nav-btn nav-prev-chap" title="Previous Chapter">
+      <span class="btn-icon">&lsaquo;</span>
+      <span class="btn-text">Prev</span>
+    </button>
+    
+    <div class="nav-title current-reference">Loading...</div>
+    
+    <button class="nav-btn nav-next-chap" title="Next Chapter">
+      <span class="btn-text">Next</span>
+      <span class="btn-icon">&rsaquo;</span>
+    </button>
+    <button class="nav-btn nav-next-book" title="Next Book">
+      <span class="btn-text">Next Book</span>
+      <span class="btn-icon">&raquo;</span>
+    </button>
+  </nav>
 
   <script src="app.js"></script>
 </body>

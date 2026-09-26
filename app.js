@@ -1,19 +1,23 @@
 let metadata = null;
+let currentVersion = "BSB";
 let currentBookIndex = 0;
 let currentChapter = 1;
 let currentTargetVerse = null;
 
+// DOM Elements
+const versionSelect = document.getElementById("version-select");
 const bookSelect = document.getElementById("book-select");
 const chapterSelect = document.getElementById("chapter-select");
-const currentRefLabel = document.getElementById("current-reference");
 const chapterContent = document.getElementById("chapter-content");
 const searchInput = document.getElementById("quick-search");
 const searchBtn = document.getElementById("search-btn");
 
-const btnPrevBook = document.getElementById("btn-prev-book");
-const btnNextBook = document.getElementById("btn-next-book");
-const btnPrevChapter = document.getElementById("btn-prev-chapter");
-const btnNextChapter = document.getElementById("btn-next-chapter");
+// Dual Navigation elements (Top & Bottom toolbars)
+const allPrevBookBtns = document.querySelectorAll(".nav-prev-book");
+const allNextBookBtns = document.querySelectorAll(".nav-next-book");
+const allPrevChapBtns = document.querySelectorAll(".nav-prev-chap");
+const allNextChapBtns = document.querySelectorAll(".nav-next-chap");
+const allRefLabels = document.querySelectorAll(".current-reference");
 
 async function init() {
   try {
@@ -21,16 +25,39 @@ async function init() {
     if (!res.ok) throw new Error("metadata.json not found");
     metadata = await res.json();
 
+    currentVersion = metadata.defaultVersion || (metadata.versions && metadata.versions[0]?.id) || "BSB";
+
+    populateVersionDropdown();
     populateBookDropdown();
     setupEventListeners();
 
     if (!handleHashChange()) {
-      loadChapter(0, 1);
+      loadChapter(currentBookIndex, 1);
     }
   } catch (err) {
     console.error(err);
-    chapterContent.innerHTML = "<p>Error loading Bible metadata. Please ensure data/metadata.json exists.</p>";
+    chapterContent.innerHTML = "<p>Error loading Bible metadata. Please verify that data/metadata.json is accessible.</p>";
   }
+}
+
+function populateVersionDropdown() {
+  versionSelect.innerHTML = "";
+  if (!metadata.versions || metadata.versions.length === 0) {
+    const opt = document.createElement("option");
+    opt.value = currentVersion;
+    opt.textContent = currentVersion;
+    versionSelect.appendChild(opt);
+    return;
+  }
+
+  metadata.versions.forEach((v) => {
+    const opt = document.createElement("option");
+    opt.value = v.id;
+    opt.textContent = v.abbr || v.id;
+    opt.title = v.name || v.id;
+    if (v.id === currentVersion) opt.selected = true;
+    versionSelect.appendChild(opt);
+  });
 }
 
 function populateBookDropdown() {
@@ -64,16 +91,23 @@ async function loadChapter(bookIdx, chapterNum, targetVerse = null) {
 
   updateChapterDropdown(currentBookIndex);
   chapterSelect.value = currentChapter;
+  versionSelect.value = currentVersion;
 
-  currentRefLabel.textContent = `${book.name} ${currentChapter}`;
+  // Update top & bottom labels and buttons
+  const refText = `${book.name} ${currentChapter}`;
+  allRefLabels.forEach((el) => {
+    el.textContent = refText;
+    el.title = `${refText} (${currentVersion})`;
+  });
   updateNavButtons();
 
-  const url = `data/${book.id}/${currentChapter}.json`;
-  chapterContent.innerHTML = "<p>Loading chapter...</p>";
+  // Load from subfolder: data/{VERSION}/{BOOK_ID}/{CHAPTER}.json
+  const url = `data/${currentVersion}/${book.id}/${currentChapter}.json`;
+  chapterContent.innerHTML = `<p style="color:var(--text-muted); padding:1rem 0;">Loading ${refText} (${currentVersion})...</p>`;
 
   try {
     const res = await fetch(url);
-    if (!res.ok) throw new Error("File not found");
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${url}`);
     const verses = await res.json();
     renderVerses(verses);
 
@@ -84,13 +118,13 @@ async function loadChapter(bookIdx, chapterNum, targetVerse = null) {
     }
 
     const hash = targetVerse
-      ? `${book.id}/${currentChapter}/${targetVerse}`
-      : `${book.id}/${currentChapter}`;
+      ? `${currentVersion}/${book.id}/${currentChapter}/${targetVerse}`
+      : `${currentVersion}/${book.id}/${currentChapter}`;
     if (window.location.hash.replace("#", "") !== hash) {
       history.pushState(null, "", `#${hash}`);
     }
   } catch (err) {
-    chapterContent.innerHTML = `<p>Unable to load content for ${book.name} ${currentChapter} (${url}).</p>`;
+    chapterContent.innerHTML = `<p style="color:#b91c1c; padding:1.5rem 0;">Unable to load content for ${book.name} ${currentChapter} in translation <strong>${currentVersion}</strong>.<br><small>File expected: <code>${url}</code></small></p>`;
   }
 }
 
@@ -128,12 +162,15 @@ function scrollToVerse(verseNum) {
 function updateNavButtons() {
   const book = metadata.books[currentBookIndex];
 
-  btnPrevBook.disabled = currentBookIndex <= 0;
-  btnNextBook.disabled = currentBookIndex >= metadata.books.length - 1;
+  const isFirstBook = currentBookIndex <= 0;
+  const isLastBook = currentBookIndex >= metadata.books.length - 1;
+  const isFirstChap = isFirstBook && currentChapter === book.firstChapter;
+  const isLastChap = isLastBook && currentChapter === book.lastChapter;
 
-  btnPrevChapter.disabled = currentBookIndex === 0 && currentChapter === book.firstChapter;
-  btnNextChapter.disabled =
-    currentBookIndex === metadata.books.length - 1 && currentChapter === book.lastChapter;
+  allPrevBookBtns.forEach((btn) => (btn.disabled = isFirstBook));
+  allNextBookBtns.forEach((btn) => (btn.disabled = isLastBook));
+  allPrevChapBtns.forEach((btn) => (btn.disabled = isFirstChap));
+  allNextChapBtns.forEach((btn) => (btn.disabled = isLastChap));
 }
 
 function parseSearch(query) {
@@ -163,6 +200,7 @@ function handleSearch() {
   if (result) {
     loadChapter(result.bookIndex, result.chapter, result.verse);
     searchInput.value = "";
+    searchInput.blur();
   } else {
     alert("Reference not recognized. Examples: 'John 3:16', '1Cor 13', 'Gen 1'");
   }
@@ -172,10 +210,26 @@ function handleHashChange() {
   const hash = window.location.hash.replace("#", "");
   if (!hash) return false;
   const parts = hash.split("/");
-  const bookId = parts[0];
-  const chapter = parts[1] || 1;
-  const verse = parts[2] || null;
 
+  let ver = currentVersion;
+  let bookId = "";
+  let chapter = 1;
+  let verse = null;
+
+  // Check if first token is a known version ID
+  const isVer = metadata.versions && metadata.versions.some((v) => v.id.toUpperCase() === parts[0].toUpperCase());
+  if (isVer) {
+    ver = parts[0].toUpperCase();
+    bookId = parts[1] || "";
+    chapter = parts[2] || 1;
+    verse = parts[3] || null;
+  } else {
+    bookId = parts[0] || "";
+    chapter = parts[1] || 1;
+    verse = parts[2] || null;
+  }
+
+  currentVersion = ver;
   const idx = metadata.books.findIndex((b) => b.id.toUpperCase() === bookId.toUpperCase());
   if (idx !== -1) {
     loadChapter(idx, chapter, verse);
@@ -184,40 +238,63 @@ function handleHashChange() {
   return false;
 }
 
+function navigatePrevChapter() {
+  const book = metadata.books[currentBookIndex];
+  if (currentChapter > book.firstChapter) {
+    loadChapter(currentBookIndex, currentChapter - 1);
+  } else if (currentBookIndex > 0) {
+    const prevBook = metadata.books[currentBookIndex - 1];
+    loadChapter(currentBookIndex - 1, prevBook.lastChapter);
+  }
+}
+
+function navigateNextChapter() {
+  const book = metadata.books[currentBookIndex];
+  if (currentChapter < book.lastChapter) {
+    loadChapter(currentBookIndex, currentChapter + 1);
+  } else if (currentBookIndex < metadata.books.length - 1) {
+    loadChapter(currentBookIndex + 1, 1);
+  }
+}
+
 function setupEventListeners() {
-  bookSelect.addEventListener("change", (e) => loadChapter(parseInt(e.target.value, 10), 1));
-  chapterSelect.addEventListener("change", (e) => loadChapter(currentBookIndex, parseInt(e.target.value, 10)));
+  versionSelect.addEventListener("change", (e) => {
+    currentVersion = e.target.value;
+    loadChapter(currentBookIndex, currentChapter, currentTargetVerse);
+  });
+
+  bookSelect.addEventListener("change", (e) => {
+    loadChapter(parseInt(e.target.value, 10), 1);
+  });
+
+  chapterSelect.addEventListener("change", (e) => {
+    loadChapter(currentBookIndex, parseInt(e.target.value, 10));
+  });
 
   searchBtn.addEventListener("click", handleSearch);
   searchInput.addEventListener("keypress", (e) => {
     if (e.key === "Enter") handleSearch();
   });
 
-  btnPrevBook.addEventListener("click", () => {
-    if (currentBookIndex > 0) loadChapter(currentBookIndex - 1, 1);
+  // Bind dual buttons (both top and bottom bars)
+  allPrevBookBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (currentBookIndex > 0) loadChapter(currentBookIndex - 1, 1);
+    });
   });
 
-  btnNextBook.addEventListener("click", () => {
-    if (currentBookIndex < metadata.books.length - 1) loadChapter(currentBookIndex + 1, 1);
+  allNextBookBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (currentBookIndex < metadata.books.length - 1) loadChapter(currentBookIndex + 1, 1);
+    });
   });
 
-  btnPrevChapter.addEventListener("click", () => {
-    const book = metadata.books[currentBookIndex];
-    if (currentChapter > book.firstChapter) {
-      loadChapter(currentBookIndex, currentChapter - 1);
-    } else if (currentBookIndex > 0) {
-      const prevBook = metadata.books[currentBookIndex - 1];
-      loadChapter(currentBookIndex - 1, prevBook.lastChapter);
-    }
+  allPrevChapBtns.forEach((btn) => {
+    btn.addEventListener("click", navigatePrevChapter);
   });
 
-  btnNextChapter.addEventListener("click", () => {
-    const book = metadata.books[currentBookIndex];
-    if (currentChapter < book.lastChapter) {
-      loadChapter(currentBookIndex, currentChapter + 1);
-    } else if (currentBookIndex < metadata.books.length - 1) {
-      loadChapter(currentBookIndex + 1, 1);
-    }
+  allNextChapBtns.forEach((btn) => {
+    btn.addEventListener("click", navigateNextChapter);
   });
 
   window.addEventListener("hashchange", handleHashChange);

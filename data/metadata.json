@@ -1,5 +1,12 @@
 {
-  "translation": "Berean Standard Bible",
+  "defaultVersion": "BSB",
+  "versions": [
+    {
+      "id": "BSB",
+      "name": "Berean Standard Bible",
+      "abbr": "BSB"
+    }
+  ],
   "books": [
     {
       "id": "GEN",
